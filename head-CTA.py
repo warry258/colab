@@ -1,7 +1,8 @@
 """
-头颅 CTA DCM 减影处理程序 v1.0
+头颅CTA DCM 减影处理程序 v1.0
 智能序列识别 + 智能参数推荐 + 双模式处理
 """
+
 import os
 import re
 import sys
@@ -11,6 +12,7 @@ import time
 from datetime import datetime
 from collections import defaultdict
 from scipy import ndimage
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QFileDialog, QProgressBar,
@@ -20,14 +22,17 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
+
 import pydicom
 from pydicom.uid import generate_uid
 
-print("头颅 CTA 减影 v1.0 - WHW版")
+print("头颅CTA减影 v1.0 - whw 版")
+
 
 # ============================================================
 # 序列分析
 # ============================================================
+
 class SeriesInfo:
     def __init__(self):
         self.series_uid = ""
@@ -43,6 +48,7 @@ class SeriesInfo:
         self.slice_thickness = 0
         self.image_shape = (0, 0)
 
+
 def parse_time(time_str):
     if not time_str:
         return None
@@ -53,6 +59,7 @@ def parse_time(time_str):
     except:
         pass
     return None
+
 
 def analyze_dicom_file(filepath):
     try:
@@ -75,6 +82,7 @@ def analyze_dicom_file(filepath):
     except:
         return None
 
+
 def scan_directory_for_series(directory, progress_callback=None, log_callback=None):
     def log(msg):
         if log_callback:
@@ -93,8 +101,8 @@ def scan_directory_for_series(directory, progress_callback=None, log_callback=No
                         dicom_files.append(f)
             except:
                 pass
-                
-    log("找到 {} 个 DICOM 文件".format(len(dicom_files)))
+    
+    log("找到 {} 个DICOM文件".format(len(dicom_files)))
     
     if not dicom_files:
         return {}
@@ -128,15 +136,17 @@ def scan_directory_for_series(directory, progress_callback=None, log_callback=No
         
         if progress_callback and i % 50 == 0:
             progress_callback(int((i + 1) / len(dicom_files) * 50))
-            
+    
     for series in series_dict.values():
         series.files.sort(key=lambda x: x[0])
-        
+    
     return dict(series_dict)
 
+
 def is_head_cta_series(series):
-    desc = (series.series_description + ' ' + series.study_description + ' ' +
+    desc = (series.series_description + ' ' + series.study_description + ' ' + 
             series.protocol_name + ' ' + series.body_part).upper()
+    
     exclude = ['SCOUT', 'LOCALIZER', 'TOPOGRAM', '定位',
                'LUNG', 'CHEST', 'PULMONARY', '肺', '胸',
                'CARDIAC', 'HEART', 'CORONARY', '心', '冠脉',
@@ -145,10 +155,10 @@ def is_head_cta_series(series):
     for kw in exclude:
         if kw in desc:
             return False
-            
+    
     if series.modality != 'CT':
         return False
-        
+    
     if series.file_count < 50:
         return False
     
@@ -160,17 +170,19 @@ def is_head_cta_series(series):
     
     if has_head and has_cta:
         return True
-        
+    
     if has_head and series.file_count >= 100:
         return True
-        
+    
     return False
+
 
 def is_contrast_enhanced(series):
     desc = series.series_description.upper()
+    
     enhanced_patterns = [
         r'\bC\+', r'\bC\s*\+', r'CE\b', r'CONTRAST', r'ENHANCED',
-        r'POST', r'ARTERIAL', r'增强', r'动脉期', r'A 期',
+        r'POST', r'ARTERIAL', r'增强', r'动脉期', r'A期',
     ]
     
     plain_patterns = [
@@ -181,15 +193,17 @@ def is_contrast_enhanced(series):
     for pattern in enhanced_patterns:
         if re.search(pattern, desc):
             return True
-            
+    
     for pattern in plain_patterns:
         if re.search(pattern, desc):
             return False
-            
+    
     return None
+
 
 def find_cta_pairs(series_dict):
     cta_series = [s for s in series_dict.values() if is_head_cta_series(s)]
+    
     if len(cta_series) < 2:
         return [], cta_series
     
@@ -232,12 +246,14 @@ def find_cta_pairs(series_dict):
             unknown.sort(key=lambda s: (s.acquisition_time or datetime.max, s.series_number))
             if len(unknown) >= 2:
                 pairs.append((unknown[0], unknown[1]))
-                
+    
     return pairs, cta_series
+
 
 # ============================================================
 # 序列扫描线程
 # ============================================================
+
 class SeriesScanThread(QThread):
     progress = pyqtSignal(int)
     log = pyqtSignal(str)
@@ -246,11 +262,11 @@ class SeriesScanThread(QThread):
     def __init__(self, directory):
         super().__init__()
         self.directory = directory
-        
+    
     def run(self):
         try:
             self.log.emit("=" * 55)
-            self.log.emit("扫描：{} ".format(self.directory))
+            self.log.emit("扫描: {}".format(self.directory))
             self.log.emit("=" * 55)
             
             series_dict = scan_directory_for_series(
@@ -259,39 +275,39 @@ class SeriesScanThread(QThread):
                 log_callback=self.log.emit
             )
             
-            self.log.emit("找到 {} 个序列 ".format(len(series_dict)))
-            self.log.emit(" ")
+            self.log.emit("找到 {} 个序列".format(len(series_dict)))
+            self.log.emit("")
             
             sorted_series = sorted(series_dict.values(), key=lambda s: s.series_number)
             for s in sorted_series:
-                time_str = s.acquisition_time.strftime("%H:%M:%S ") if s.acquisition_time else "--:--:--"
+                time_str = s.acquisition_time.strftime("%H:%M:%S") if s.acquisition_time else "--:--:--"
                 is_cta = is_head_cta_series(s)
                 contrast = is_contrast_enhanced(s)
                 
-                marker = "   "
+                marker = "  "
                 if is_cta:
                     if contrast is True:
-                        marker = "C+ "
+                        marker = "C+"
                     elif contrast is False:
                         marker = "C-"
                     else:
-                        marker = "★  "
+                        marker = "★ "
                 
-                self.log.emit("{} #{:3d} | {:4d}张 | {} | {} ".format(
+                self.log.emit("{} #{:3d} | {:4d}张 | {} | {}".format(
                     marker, s.series_number, s.file_count, time_str,
-                    s.series_description[:35] if s.series_description else "(无描述) "
+                    s.series_description[:35] if s.series_description else "(无描述)"
                 ))
             
             pairs, cta_series = find_cta_pairs(series_dict)
             
-            self.log.emit(" ")
+            self.log.emit("")
             if pairs:
                 pre, post = pairs[0]
-                self.log.emit("★ 自动配对：")
-                self.log.emit("  平扫 (C-): #{} {} ".format(pre.series_number, pre.series_description[:30]))
-                self.log.emit("  增强 (C+): #{} {} ".format(post.series_number, post.series_description[:30]))
+                self.log.emit("★ 自动配对:")
+                self.log.emit("  平扫(C-): #{} {}".format(pre.series_number, pre.series_description[:30]))
+                self.log.emit("  增强(C+): #{} {}".format(post.series_number, post.series_description[:30]))
             else:
-                self.log.emit("未找到自动配对，请手动选择 ")
+                self.log.emit("未找到自动配对，请手动选择")
             
             self.progress.emit(100)
             self.finished_signal.emit(series_dict, pairs, cta_series)
@@ -301,9 +317,11 @@ class SeriesScanThread(QThread):
             self.log.emit(traceback.format_exc())
             self.finished_signal.emit({}, [], [])
 
+
 # ============================================================
 # 智能参数分析线程
 # ============================================================
+
 class ParamAnalyzeThread(QThread):
     progress = pyqtSignal(int)
     log = pyqtSignal(str)
@@ -313,12 +331,12 @@ class ParamAnalyzeThread(QThread):
         super().__init__()
         self.pre_files = pre_files
         self.post_files = post_files
-        
+    
     def run(self):
         try:
-            self.log.emit(" ")
+            self.log.emit("")
             self.log.emit("=" * 55)
-            self.log.emit("智能参数分析 ")
+            self.log.emit("智能参数分析")
             self.log.emit("=" * 55)
             
             pre_dict = {inst: path for inst, path in self.pre_files}
@@ -333,7 +351,7 @@ class ParamAnalyzeThread(QThread):
             sample_n = min(8, total)
             indices = [common[i * (total - 1) // (sample_n - 1)] for i in range(sample_n)] if sample_n > 1 else [common[0]]
             
-            self.log.emit("采样 {} 层分析... ".format(sample_n))
+            self.log.emit("采样 {} 层分析...".format(sample_n))
             
             all_shifts = []
             all_chars = []
@@ -349,14 +367,14 @@ class ParamAnalyzeThread(QThread):
                     chars = self._analyze_image(pre_d, post_d)
                     all_chars.append(chars)
                     
-                    self.log.emit("  #{}: dy={:.2f} dx={:.2f} rot={:.3f}° ".format(inst, dy, dx, angle))
+                    self.log.emit("  #{}: dy={:.2f} dx={:.2f} rot={:.3f}°".format(inst, dy, dx, angle))
                 except Exception as e:
-                    self.log.emit("  #{}: 错误 ".format(inst))
+                    self.log.emit("  #{}: 错误".format(inst))
                 
                 self.progress.emit(int((i + 1) / sample_n * 100))
             
             if not all_shifts:
-                self.finished_signal.emit({'error': '分析失败 '})
+                self.finished_signal.emit({'error': '分析失败'})
                 return
             
             shifts = np.array(all_shifts)
@@ -366,29 +384,29 @@ class ParamAnalyzeThread(QThread):
             
             rec = self._compute_recommendations(shifts, avg, is_rigid, total)
             
-            self.log.emit(" ")
-            self.log.emit("分析结果：")
-            self.log.emit("  位移一致性：{} ".format("高 (全局配准) " if is_rigid else "中等 (逐层配准) "))
-            self.log.emit("  薄骨占比：{:.2f}% ".format(avg['thin_bone'] * 100))
-            self.log.emit("  噪声水平：{:.1f} HU ".format(avg['noise']))
-            self.log.emit("  血管信号：{:.1f} HU ".format(avg['vessel_signal']))
-            self.log.emit("  气骨交界：{:.2f}% ".format(avg.get('air_bone_interface', 0) * 100))
-            self.log.emit(" ")
+            self.log.emit("")
+            self.log.emit("分析结果:")
+            self.log.emit("  位移一致性: {}".format("高(全局配准)" if is_rigid else "中等(逐层配准)"))
+            self.log.emit("  薄骨占比: {:.2f}%".format(avg['thin_bone'] * 100))
+            self.log.emit("  噪声水平: {:.1f} HU".format(avg['noise']))
+            self.log.emit("  血管信号: {:.1f} HU".format(avg['vessel_signal']))
+            self.log.emit("  气骨交界: {:.2f}%".format(avg.get('air_bone_interface', 0) * 100))
+            self.log.emit("")
             
             # 推荐处理模式
             quality_score = self._assess_quality(avg)
             rec['quality_score'] = quality_score
             if quality_score >= 0.7:
                 rec['recommended_mode'] = 'fast'
-                self.log.emit("图像质量：优良 (建议使用快速模式) ")
+                self.log.emit("图像质量: 优良 (建议使用快速模式)")
             else:
                 rec['recommended_mode'] = 'quality'
-                self.log.emit("图像质量：一般 (建议使用精细模式) ")
+                self.log.emit("图像质量: 一般 (建议使用精细模式)")
             
-            self.log.emit(" ")
-            self.log.emit("推荐参数：")
-            self.log.emit("  骨骼抑制：{:.1f} ".format(rec['bone_strength']))
-            self.log.emit("  血管增强：{:.1f}x ".format(rec['vessel_enhance']))
+            self.log.emit("")
+            self.log.emit("推荐参数:")
+            self.log.emit("  骨骼抑制: {:.1f}".format(rec['bone_strength']))
+            self.log.emit("  血管增强: {:.1f}x".format(rec['vessel_enhance']))
             self.log.emit("=" * 55)
             
             self.finished_signal.emit(rec)
@@ -397,7 +415,7 @@ class ParamAnalyzeThread(QThread):
             import traceback
             self.log.emit(traceback.format_exc())
             self.finished_signal.emit({'error': str(e)})
-
+    
     def _analyze_image(self, pre, post):
         diff_pos = np.clip(post - pre, 0, None)
         
@@ -424,9 +442,9 @@ class ParamAnalyzeThread(QThread):
             'vessel_signal': vessel,
             'air_bone_interface': float(air_bone.sum() / air_bone.size)
         }
-
+    
     def _assess_quality(self, chars):
-        """评估图像质量，返回 0-1 分数"""
+        """评估图像质量，返回0-1分数"""
         score = 1.0
         
         # 噪声高扣分
@@ -452,7 +470,7 @@ class ParamAnalyzeThread(QThread):
             score -= 0.1
         
         return max(0, min(1, score))
-
+    
     def _compute_recommendations(self, shifts, chars, is_rigid, file_count):
         rec = {
             'global_mode': is_rigid,
@@ -492,9 +510,11 @@ class ParamAnalyzeThread(QThread):
         
         return rec
 
+
 # ============================================================
 # 配准算法
 # ============================================================
+
 def compute_ncc(fixed, moving):
     f = fixed.ravel().astype(np.float64)
     m = moving.ravel().astype(np.float64)
@@ -505,15 +525,18 @@ def compute_ncc(fixed, moving):
         return 0.0
     return np.dot(f, m) / (len(f) * f_std * m_std)
 
+
 def shift_image(image, dy, dx):
     if abs(dy) < 0.001 and abs(dx) < 0.001:
         return image.copy()
     return ndimage.shift(image.astype(np.float64), [dy, dx], order=1, mode='constant', cval=0)
 
+
 def rotate_image(image, angle_deg):
     if abs(angle_deg) < 0.001:
         return image.copy()
     return ndimage.rotate(image.astype(np.float64), angle_deg, reshape=False, order=1, mode='constant', cval=0)
+
 
 def apply_transform(image, dy, dx, angle):
     result = image.copy()
@@ -523,8 +546,10 @@ def apply_transform(image, dy, dx, angle):
         result = shift_image(result, dy, dx)
     return result
 
+
 def fft_phase_correlation(fixed, moving, max_shift=15):
     from numpy.fft import fft2, ifft2, fftshift
+    
     h, w = fixed.shape
     margin = h // 4
     
@@ -552,19 +577,21 @@ def fft_phase_correlation(fixed, moving, max_shift=15):
             denom = 2 * (y_vals[0] + y_vals[2] - 2 * y_vals[1])
             if abs(denom) > 1e-6:
                 dy += (y_vals[0] - y_vals[2]) / denom
-                
+    
     if 1 <= px < correlation.shape[1] - 1:
         x_vals = correlation[py, px-1:px+2]
         if x_vals[1] > x_vals[0] and x_vals[1] > x_vals[2]:
             denom = 2 * (x_vals[0] + x_vals[2] - 2 * x_vals[1])
             if abs(denom) > 1e-6:
                 dx += (x_vals[0] - x_vals[2]) / denom
-                
+    
     return float(np.clip(dy, -max_shift, max_shift)), float(np.clip(dx, -max_shift, max_shift))
+
 
 def robust_registration(fixed, moving, max_shift=15, max_angle=3.0):
     h, w = fixed.shape
     margin = max(h // 6, 30)
+    
     def get_roi(img):
         return img[margin:-margin, margin:-margin]
     
@@ -582,26 +609,26 @@ def robust_registration(fixed, moving, max_shift=15, max_angle=3.0):
         if score > best_score:
             best_score = score
             best_angle = angle
-            
+    
     for angle in np.arange(best_angle - 0.5, best_angle + 0.55, 0.1):
         score = evaluate(dy, dx, angle)
         if score > best_score:
             best_score = score
             best_angle = angle
-            
+    
     for angle in np.arange(best_angle - 0.1, best_angle + 0.12, 0.02):
         score = evaluate(dy, dx, angle)
         if score > best_score:
             best_score = score
             best_angle = angle
-            
+    
     if abs(best_angle) > 0.05:
         rotated = rotate_image(moving, best_angle)
         dy2, dx2 = fft_phase_correlation(fixed, rotated, 5)
         if evaluate(dy + dy2, dx + dx2, best_angle) > best_score:
             dy += dy2
             dx += dx2
-            
+    
     for ddy in [-0.3, -0.15, 0, 0.15, 0.3]:
         for ddx in [-0.3, -0.15, 0, 0.15, 0.3]:
             score = evaluate(dy + ddy, dx + ddx, best_angle)
@@ -609,27 +636,32 @@ def robust_registration(fixed, moving, max_shift=15, max_angle=3.0):
                 best_score = score
                 dy += ddy
                 dx += ddx
-                
+    
     return dy, dx, best_angle, best_score
+
 
 # ============================================================
 # 基础检测函数（两种模式共用）
 # ============================================================
+
 def create_body_mask(image):
     body = image > -400
     body = ndimage.binary_closing(body, iterations=3)
     body = ndimage.binary_fill_holes(body)
     body = ndimage.binary_opening(body, iterations=2)
+    
     labeled, num = ndimage.label(body)
     if num > 0:
         sizes = ndimage.sum(body, labeled, range(1, num + 1))
         body = labeled == (np.argmax(sizes) + 1)
-        
+    
     return body
+
 
 def detect_equipment(pre, post):
     high_both = (pre > 150) & (post > 150)
     stable = np.abs(post - pre) < 30
+    
     body = create_body_mask(pre)
     body_dilated = ndimage.binary_dilation(body, iterations=10)
     
@@ -638,22 +670,27 @@ def detect_equipment(pre, post):
     
     return equipment
 
+
 def detect_thin_bone(pre_image):
     bone = pre_image > 150
     eroded = ndimage.binary_erosion(bone, iterations=2)
     thin_bone = bone & ~eroded
+    
     edges = np.abs(ndimage.sobel(pre_image.astype(np.float64)))
     high_edge = edges > np.percentile(edges[bone] if bone.sum() > 0 else edges, 70)
     
     return thin_bone | (bone & high_edge)
 
+
 # ============================================================
 # 快速模式算法 (V1.0)
 # ============================================================
+
 def fast_subtraction(pre, post_aligned, bone_strength=1.0, vessel_sensitivity=1.0):
     """快速减影算法 - 适合高质量扫描"""
     diff = post_aligned - pre
     diff_pos = np.clip(diff, 0, None)
+    
     gain = np.ones_like(diff_pos, dtype=np.float64)
     
     body = create_body_mask(pre)
@@ -693,9 +730,11 @@ def fast_subtraction(pre, post_aligned, bone_strength=1.0, vessel_sensitivity=1.
     
     return diff_pos * np.clip(gain, 0, 1.5)
 
+
 def fast_clean_bone_edges(image, pre_image, edge_width=2):
     """快速边缘清理"""
     bone = pre_image > 150
+    
     bone_dilated = ndimage.binary_dilation(bone, iterations=edge_width)
     bone_eroded = ndimage.binary_erosion(bone, iterations=edge_width)
     edge_region = bone_dilated & ~bone_eroded
@@ -707,23 +746,27 @@ def fast_clean_bone_edges(image, pre_image, edge_width=2):
     
     return result
 
+
 def fast_morphological_cleanup(image, min_size=5):
     """快速形态学清理"""
     mask = image > 10
     mask = ndimage.binary_opening(mask, iterations=1)
+    
     labeled, num = ndimage.label(mask)
     if num > 0:
         sizes = ndimage.sum(mask, labeled, range(1, num + 1))
         small = np.isin(labeled, np.where(np.array(sizes) < min_size)[0] + 1)
         mask[small] = False
-        
+    
     result = image.copy()
     result[~mask & (image < 30)] = 0
     return result
 
+
 # ============================================================
 # 精细模式算法 (V1.1)
 # ============================================================
+
 def detect_scalp_region(pre_image, body_mask):
     """检测头皮区域"""
     body_eroded = ndimage.binary_erosion(body_mask, iterations=8)
@@ -732,6 +775,7 @@ def detect_scalp_region(pre_image, body_mask):
     scalp = scalp_zone & soft_tissue
     scalp = ndimage.binary_dilation(scalp, iterations=2)
     return scalp
+
 
 def detect_air_bone_interface(pre_image):
     """检测气骨交界区域"""
@@ -743,6 +787,7 @@ def detect_air_bone_interface(pre_image):
     interface = interface & ndimage.binary_dilation(bone, iterations=6)
     return interface
 
+
 def detect_petrous_bone(pre_image):
     """检测岩骨区域"""
     dense_bone = pre_image > 400
@@ -753,6 +798,7 @@ def detect_petrous_bone(pre_image):
     petrous = dense_bone & ndimage.binary_dilation(high_gradient, iterations=2)
     petrous = ndimage.binary_dilation(petrous, iterations=3)
     return petrous
+
 
 def detect_venous_sinus_region(pre_image, diff_pos):
     """检测静脉窦区域"""
@@ -766,10 +812,12 @@ def detect_venous_sinus_region(pre_image, diff_pos):
     venous = brain_edge & medium_signal
     return venous
 
+
 def quality_subtraction(pre, post_aligned, bone_strength=1.0, vessel_sensitivity=1.0):
     """精细减影算法 - 适合复杂情况"""
     diff = post_aligned - pre
     diff_pos = np.clip(diff, 0, None)
+    
     gain = np.ones_like(diff_pos, dtype=np.float64)
     
     # 基础掩码
@@ -841,11 +889,13 @@ def quality_subtraction(pre, post_aligned, bone_strength=1.0, vessel_sensitivity
     
     return diff_pos * np.clip(gain, 0, 1.5)
 
+
 def quality_clean_bone_edges(image, pre_image, edge_width=2):
     """精细边缘清理"""
     bone = pre_image > 150
     air_bone = detect_air_bone_interface(pre_image)
     petrous = detect_petrous_bone(pre_image)
+    
     bone_dilated = ndimage.binary_dilation(bone, iterations=edge_width)
     bone_eroded = ndimage.binary_erosion(bone, iterations=edge_width)
     edge_region = bone_dilated & ~bone_eroded
@@ -869,10 +919,12 @@ def quality_clean_bone_edges(image, pre_image, edge_width=2):
     
     return result
 
+
 def remove_isolated_spots(image, pre_image, max_spot_size=15):
     """移除孤立斑点"""
     petrous = detect_petrous_bone(pre_image)
     result = image.copy()
+    
     mask = image > 15
     labeled, num = ndimage.label(mask)
     
@@ -890,13 +942,15 @@ def remove_isolated_spots(image, pre_image, max_spot_size=15):
             else:
                 if region_size < max_spot_size // 2:
                     result[region] = 0
-                    
+    
     return result
+
 
 def quality_morphological_cleanup(image, pre_image, min_size=5):
     """精细形态学清理"""
     mask = image > 10
     mask = ndimage.binary_opening(mask, iterations=1)
+    
     scalp = detect_scalp_region(pre_image, create_body_mask(pre_image))
     air_bone = detect_air_bone_interface(pre_image)
     
@@ -918,14 +972,16 @@ def quality_morphological_cleanup(image, pre_image, min_size=5):
             
             if region_size < effective_min:
                 mask[region] = False
-                
+    
     result = image.copy()
     result[~mask & (image < 30)] = 0
     return result
 
+
 # ============================================================
 # 通用函数
 # ============================================================
+
 def edge_preserving_smooth(image, pre_image, sigma=0.7):
     edges = np.abs(ndimage.sobel(pre_image.astype(np.float64)))
     edge_norm = edges / (edges.max() + 1e-6)
@@ -933,9 +989,11 @@ def edge_preserving_smooth(image, pre_image, sigma=0.7):
     smooth_light = ndimage.gaussian_filter(image, sigma * 0.3)
     return smooth_heavy * (1 - edge_norm) + smooth_light * edge_norm
 
+
 # ============================================================
-# DICOM 处理
+# DICOM处理
 # ============================================================
+
 def load_dicom(filepath):
     ds = pydicom.dcmread(filepath)
     try:
@@ -943,13 +1001,16 @@ def load_dicom(filepath):
     except:
         ds.decompress()
         pixels = ds.pixel_array
+    
     pixels = pixels.astype(np.float64)
     if hasattr(ds, 'RescaleSlope'):
         pixels = pixels * float(ds.RescaleSlope) + float(ds.RescaleIntercept)
     return ds, pixels
 
+
 def save_dicom(template_ds, pixel_data, output_path, wc=200, ww=400):
     new_ds = template_ds.copy()
+    
     data_min, data_max = float(pixel_data.min()), float(pixel_data.max())
     
     if data_max > data_min:
@@ -969,7 +1030,7 @@ def save_dicom(template_ds, pixel_data, output_path, wc=200, ww=400):
     for tag in ['LossyImageCompression', 'LossyImageCompressionRatio', 'LossyImageCompressionMethod']:
         if hasattr(new_ds, tag):
             delattr(new_ds, tag)
-            
+    
     new_ds.RescaleSlope = (data_max - data_min) / 4095 if data_max > data_min else 1
     new_ds.RescaleIntercept = data_min if data_max > data_min else 0
     new_ds.WindowCenter = wc
@@ -981,9 +1042,11 @@ def save_dicom(template_ds, pixel_data, output_path, wc=200, ww=400):
     
     new_ds.save_as(output_path, write_like_original=False)
 
+
 # ============================================================
 # 处理线程
 # ============================================================
+
 class ProcessThread(QThread):
     progress = pyqtSignal(int)
     log = pyqtSignal(str)
@@ -996,10 +1059,10 @@ class ProcessThread(QThread):
         self.output_dir = output_dir
         self.options = options
         self.cancelled = False
-        
+    
     def cancel(self):
         self.cancelled = True
-        
+    
     def run(self):
         try:
             t0 = time.time()
@@ -1007,8 +1070,8 @@ class ProcessThread(QThread):
             use_quality_mode = opt.get('quality_mode', False)
             
             self.log.emit("=" * 50)
-            mode_name = "精细模式 " if use_quality_mode else "快速模式 "
-            self.log.emit("CTA 减影处理 - {} ".format(mode_name))
+            mode_name = "精细模式" if use_quality_mode else "快速模式"
+            self.log.emit("CTA减影处理 - {}".format(mode_name))
             self.log.emit("=" * 50)
             
             pre_dict = {inst: path for inst, path in self.pre_files}
@@ -1016,21 +1079,21 @@ class ProcessThread(QThread):
             common = sorted(set(pre_dict.keys()) & set(post_dict.keys()))
             
             if not common:
-                self.finished_signal.emit(False, "序列不匹配 ")
+                self.finished_signal.emit(False, "序列不匹配")
                 return
             
             total = len(common)
-            self.log.emit("匹配：{} 对 ".format(total))
+            self.log.emit("匹配: {} 对".format(total))
             
             global_params = None
             if opt.get('global_mode', True):
                 mid = common[total // 2]
-                self.log.emit("计算全局参数... ")
+                self.log.emit("计算全局参数...")
                 _, pre_d = load_dicom(pre_dict[mid])
                 _, post_d = load_dicom(post_dict[mid])
                 dy, dx, ang, _ = robust_registration(pre_d, post_d, opt['max_shift'], opt['max_angle'])
                 global_params = (dy, dx, ang)
-                self.log.emit("  dy={:.2f} dx={:.2f} rot={:.3f}° ".format(dy, dx, ang))
+                self.log.emit("  dy={:.2f} dx={:.2f} rot={:.3f}°".format(dy, dx, ang))
             
             os.makedirs(self.output_dir, exist_ok=True)
             series_uid = generate_uid()
@@ -1038,7 +1101,7 @@ class ProcessThread(QThread):
             done = 0
             times = []
             
-            self.log.emit("处理中... ")
+            self.log.emit("处理中...")
             
             for i, inst in enumerate(common):
                 if self.cancelled:
@@ -1088,7 +1151,7 @@ class ProcessThread(QThread):
                     
                     result = result * opt['vessel_enhance']
                     
-                    out_path = os.path.join(self.output_dir, "SUB_{:04d}.dcm ".format(inst))
+                    out_path = os.path.join(self.output_dir, "SUB_{:04d}.dcm".format(inst))
                     save_dicom(post_ds, result, out_path, opt['wc'], opt['ww'])
                     
                     ds = pydicom.dcmread(out_path)
@@ -1102,7 +1165,7 @@ class ProcessThread(QThread):
                     if done % 25 == 0:
                         avg = np.mean(times[-25:])
                         remain = avg * (total - i - 1)
-                        self.log.emit("  {}/{} ({:.2f}s/张，剩余{:.0f}s) ".format(done, total, avg, remain))
+                        self.log.emit("  {}/{} ({:.2f}s/张, 剩余{:.0f}s)".format(done, total, avg, remain))
                 
                 except Exception as e:
                     pass
@@ -1110,10 +1173,10 @@ class ProcessThread(QThread):
                 self.progress.emit(int((i + 1) / total * 100))
             
             elapsed = time.time() - t0
-            self.log.emit(" ")
-            self.log.emit("完成：{} 张，{:.1f}秒 ({}) ".format(done, elapsed, mode_name))
+            self.log.emit("")
+            self.log.emit("完成: {} 张, {:.1f}秒 ({})".format(done, elapsed, mode_name))
             
-            self.finished_signal.emit(True, "完成!\n\n处理模式：{}\n处理：{} 张\n耗时：{:.1f}秒\n\n输出:\n{} ".format(
+            self.finished_signal.emit(True, "完成!\n\n处理模式: {}\n处理: {} 张\n耗时: {:.1f}秒\n\n输出:\n{}".format(
                 mode_name, done, elapsed, self.output_dir))
             
         except Exception as e:
@@ -1121,9 +1184,11 @@ class ProcessThread(QThread):
             self.log.emit(traceback.format_exc())
             self.finished_signal.emit(False, str(e))
 
+
 # ============================================================
 # GUI
 # ============================================================
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1133,264 +1198,539 @@ class MainWindow(QMainWindow):
         self.selected_post = None
         self.recommendations = None
         self.init_ui()
-        
+    
     def init_ui(self):
-        self.setWindowTitle("头颅 CTA 减影 v1.0 - WHW 版 ")
-        self.setMinimumSize(920, 1000)
-        
+        self.setWindowTitle("头颅CTA减影-whw版 v1.0")
+        self.setMinimumSize(960, 980)
+
+        # ── 全局调色板 ──────────────────────────────────────────
+        ACCENT   = "#1A6FBF"   # 主蓝
+        ACCENT2  = "#0D5199"   # 深蓝（悬停/按下）
+        SUCCESS  = "#1E7F4E"   # 绿（已推荐快速）
+        WARNING  = "#B06000"   # 琥珀（推荐精细）
+        BG       = "#F4F5F7"   # 页面背景
+        SURFACE  = "#FFFFFF"   # 卡片背景
+        BORDER   = "#D0D5DE"   # 边框
+        TEXT_PRI = "#1A1D23"   # 主文字
+        TEXT_SEC = "#5A6272"   # 次要文字
+        DANGER   = "#C0392B"   # 开始按钮红
+
+        APP_STYLE = """
+        QMainWindow, QWidget {{
+            background: {bg};
+            color: {text};
+            font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+            font-size: 9pt;
+        }}
+        QGroupBox {{
+            background: {surface};
+            border: 1px solid {border};
+            border-radius: 6px;
+            margin-top: 10px;
+            padding: 10px 12px 10px 12px;
+            font-weight: 600;
+            font-size: 9pt;
+            color: {text};
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            left: 10px;
+            top: 0px;
+            padding: 0 4px;
+            background: {surface};
+            color: {accent};
+        }}
+        QLineEdit {{
+            background: {surface};
+            border: 1px solid {border};
+            border-radius: 4px;
+            padding: 5px 8px;
+            color: {text};
+        }}
+        QLineEdit:focus {{
+            border-color: {accent};
+        }}
+        QComboBox {{
+            background: {surface};
+            border: 1px solid {border};
+            border-radius: 4px;
+            padding: 5px 8px;
+            color: {text};
+            min-height: 24px;
+        }}
+        QComboBox:focus {{
+            border-color: {accent};
+        }}
+        QComboBox::drop-down {{
+            border: none;
+            width: 20px;
+        }}
+        QComboBox QAbstractItemView {{
+            background: {surface};
+            border: 1px solid {border};
+            selection-background-color: {accent};
+            selection-color: white;
+        }}
+        QSpinBox, QDoubleSpinBox {{
+            background: {surface};
+            border: 1px solid {border};
+            border-radius: 4px;
+            padding: 4px 6px;
+            color: {text};
+            min-width: 64px;
+        }}
+        QSpinBox:focus, QDoubleSpinBox:focus {{
+            border-color: {accent};
+        }}
+        QCheckBox {{
+            color: {text};
+            spacing: 6px;
+        }}
+        QCheckBox::indicator {{
+            width: 15px;
+            height: 15px;
+            border: 1px solid {border};
+            border-radius: 3px;
+            background: {surface};
+        }}
+        QCheckBox::indicator:checked {{
+            background: {accent};
+            border-color: {accent};
+        }}
+        QRadioButton {{
+            color: {text};
+            font-weight: 600;
+            spacing: 6px;
+        }}
+        QRadioButton::indicator {{
+            width: 15px;
+            height: 15px;
+            border: 1px solid {border};
+            border-radius: 8px;
+            background: {surface};
+        }}
+        QRadioButton::indicator:checked {{
+            background: {accent};
+            border-color: {accent};
+        }}
+        QSlider::groove:horizontal {{
+            height: 4px;
+            background: {border};
+            border-radius: 2px;
+        }}
+        QSlider::handle:horizontal {{
+            background: {accent};
+            border: none;
+            width: 14px;
+            height: 14px;
+            margin: -5px 0;
+            border-radius: 7px;
+        }}
+        QSlider::sub-page:horizontal {{
+            background: {accent};
+            border-radius: 2px;
+        }}
+        QProgressBar {{
+            background: {border};
+            border: none;
+            border-radius: 4px;
+            height: 8px;
+            text-align: center;
+            color: transparent;
+        }}
+        QProgressBar::chunk {{
+            background: {accent};
+            border-radius: 4px;
+        }}
+        QTextEdit {{
+            background: #1C1E26;
+            color: #C8D0E0;
+            border: 1px solid {border};
+            border-radius: 4px;
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 8.5pt;
+        }}
+        QScrollBar:vertical {{
+            background: {bg};
+            width: 8px;
+            border-radius: 4px;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {border};
+            border-radius: 4px;
+            min-height: 20px;
+        }}
+        QLabel {{
+            color: {text};
+        }}
+        """.format(
+            bg=BG, surface=SURFACE, border=BORDER,
+            text=TEXT_PRI, accent=ACCENT
+        )
+
+        self.setStyleSheet(APP_STYLE)
+
+        # ── 按钮样式工厂 ────────────────────────────────────────
+        def btn_primary(text):
+            b = QPushButton(text)
+            b.setStyleSheet("""
+                QPushButton {{
+                    background: {a}; color: white;
+                    border: none; border-radius: 4px;
+                    padding: 6px 16px; font-weight: 600;
+                }}
+                QPushButton:hover {{ background: {a2}; }}
+                QPushButton:pressed {{ background: {a2}; }}
+                QPushButton:disabled {{ background: #B0BEC5; color: #ECEFF1; }}
+            """.format(a=ACCENT, a2=ACCENT2))
+            return b
+
+        def btn_secondary(text):
+            b = QPushButton(text)
+            b.setStyleSheet("""
+                QPushButton {{
+                    background: {s}; color: {t};
+                    border: 1px solid {bd}; border-radius: 4px;
+                    padding: 5px 12px;
+                }}
+                QPushButton:hover {{ background: #E8EDF5; }}
+                QPushButton:disabled {{ color: #B0BEC5; border-color: #D0D5DE; }}
+            """.format(s=SURFACE, t=TEXT_PRI, bd=BORDER))
+            return b
+
+        # ── 布局 ────────────────────────────────────────────────
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setSpacing(6)
-        
-        # 标题
-        title = QLabel("头颅 CTA 数字减影 WHW 版v1.0")
-        title.setFont(QFont("Arial ", 16, QFont.Bold))
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
-        
-        # 数据目录
-        dir_group = QGroupBox("1. 选择数据目录 ")
-        dir_layout = QHBoxLayout(dir_group)
-        dir_layout.addWidget(QLabel("DICOM 目录："))
+        root = QVBoxLayout(central)
+        root.setContentsMargins(16, 12, 16, 12)
+        root.setSpacing(10)
+
+        # ── 标题栏 ──────────────────────────────────────────────
+        header = QWidget()
+        header.setStyleSheet(
+            "background: {}; border-radius: 6px;".format(ACCENT)
+        )
+        header.setFixedHeight(44)
+        h_lay = QHBoxLayout(header)
+        h_lay.setContentsMargins(16, 0, 16, 0)
+        title_lbl = QLabel("头颅CTA 数字减影-whw 版  v1.0")
+        title_lbl.setFont(QFont("Microsoft YaHei", 13, QFont.Bold))
+        title_lbl.setStyleSheet("color: white; background: transparent;")
+        sub_lbl = QLabel("双模式 · 智能配准 · 自动推荐参数")
+        sub_lbl.setStyleSheet("color: rgba(255,255,255,0.7); background: transparent; font-size: 8.5pt;")
+        h_lay.addWidget(title_lbl)
+        h_lay.addStretch()
+        h_lay.addWidget(sub_lbl)
+        root.addWidget(header)
+
+        # ── 1. 数据目录 ─────────────────────────────────────────
+        dir_group = QGroupBox("1   数据目录")
+        dir_lay = QHBoxLayout(dir_group)
+        dir_lay.setSpacing(8)
+        lbl_dir = QLabel("DICOM 目录:")
+        lbl_dir.setStyleSheet("color:{};".format(TEXT_SEC))
+        lbl_dir.setFixedWidth(72)
+        dir_lay.addWidget(lbl_dir)
         self.data_dir_edit = QLineEdit()
-        dir_layout.addWidget(self.data_dir_edit)
-        browse_btn = QPushButton("浏览... ")
+        self.data_dir_edit.setPlaceholderText("请选择或拖入 DICOM 文件夹…")
+        dir_lay.addWidget(self.data_dir_edit)
+        browse_btn = btn_secondary("浏览…")
+        browse_btn.setFixedWidth(80)
         browse_btn.clicked.connect(lambda: self.data_dir_edit.setText(
-            QFileDialog.getExistingDirectory(self, "选择目录 ") or self.data_dir_edit.text()))
-        dir_layout.addWidget(browse_btn)
-        self.scan_btn = QPushButton("扫描 ")
-        self.scan_btn.setStyleSheet("background:#9C27B0;color:white;font-weight:bold; ")
+            QFileDialog.getExistingDirectory(self, "选择目录") or self.data_dir_edit.text()))
+        dir_lay.addWidget(browse_btn)
+        self.scan_btn = btn_primary("扫 描")
+        self.scan_btn.setFixedWidth(72)
         self.scan_btn.clicked.connect(self.scan_directory)
-        dir_layout.addWidget(self.scan_btn)
-        layout.addWidget(dir_group)
-        
-        # 序列选择
-        series_group = QGroupBox("2. 选择序列配对 ")
-        series_layout = QVBoxLayout(series_group)
-        
-        select_layout = QHBoxLayout()
-        select_layout.addWidget(QLabel("平扫 (C-): "))
+        dir_lay.addWidget(self.scan_btn)
+        root.addWidget(dir_group)
+
+        # ── 2. 序列配对 ─────────────────────────────────────────
+        series_group = QGroupBox("2   序列配对")
+        series_lay = QVBoxLayout(series_group)
+        series_lay.setSpacing(8)
+
+        combo_row = QHBoxLayout()
+        combo_row.setSpacing(12)
+
+        lbl_pre = QLabel("平扫 (C−):")
+        lbl_pre.setStyleSheet("color:{};".format(TEXT_SEC))        
+        combo_row.addWidget(lbl_pre)
         self.pre_combo = QComboBox()
-        self.pre_combo.setMinimumWidth(300)
-        select_layout.addWidget(self.pre_combo)
-        select_layout.addSpacing(20)
-        select_layout.addWidget(QLabel("增强 (C+): "))
+        self.pre_combo.setMinimumWidth(280)
+        combo_row.addWidget(self.pre_combo, 1)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setStyleSheet("color:{};".format(BORDER))
+        combo_row.addWidget(sep)
+
+        lbl_post = QLabel("增强 (C+):")
+        lbl_post.setStyleSheet("color:{};".format(TEXT_SEC))      
+        combo_row.addWidget(lbl_post)
         self.post_combo = QComboBox()
-        self.post_combo.setMinimumWidth(300)
-        select_layout.addWidget(self.post_combo)
-        select_layout.addStretch()
-        series_layout.addLayout(select_layout)
-        
-        # 分析按钮居中
-        analyze_layout = QHBoxLayout()
-        analyze_layout.addStretch()
-        self.analyze_btn = QPushButton("🔍 分析序列 & 推荐参数 ")
-        self.analyze_btn.setStyleSheet("background:#2196F3;color:white;font-weight:bold;padding:8px; ")
+        self.post_combo.setMinimumWidth(280)
+        combo_row.addWidget(self.post_combo, 1)
+
+        series_lay.addLayout(combo_row)
+
+        analyze_row = QHBoxLayout()
+        self.analyze_btn = btn_primary("🔍  分析序列 && 推荐参数")
         self.analyze_btn.clicked.connect(self.analyze_params)
         self.analyze_btn.setEnabled(False)
-        analyze_layout.addWidget(self.analyze_btn)
-        analyze_layout.addStretch()
-        series_layout.addLayout(analyze_layout)
-        
-        layout.addWidget(series_group)
-        
-        # 输出目录
-        out_group = QGroupBox("3. 输出目录 ")
-        out_layout = QHBoxLayout(out_group)
+        self.analyze_btn.setFixedHeight(30)
+        analyze_row.addWidget(self.analyze_btn)
+        analyze_row.addStretch()
+        series_lay.addLayout(analyze_row)
+
+        root.addWidget(series_group)
+
+        # ── 3. 输出目录 ─────────────────────────────────────────
+        out_group = QGroupBox("3   输出目录")
+        out_lay = QHBoxLayout(out_group)
+        out_lay.setSpacing(8)
         self.out_edit = QLineEdit()
-        out_layout.addWidget(self.out_edit)
-        out_btn = QPushButton("... ")
-        out_btn.setFixedWidth(30)
+        self.out_edit.setPlaceholderText("留空则自动在数据目录下创建 CTA_Subtraction 文件夹")
+        out_lay.addWidget(self.out_edit)
+        out_btn = btn_secondary("…")
+        out_btn.setFixedWidth(36)
         out_btn.clicked.connect(lambda: self.out_edit.setText(
-            QFileDialog.getExistingDirectory(self, "选择输出目录 ") or self.out_edit.text()))
-        out_layout.addWidget(out_btn)
-        layout.addWidget(out_group)
-        
-        # ===================== 处理模式选择 =====================
-        mode_group = QGroupBox("4. 处理模式 ")
-        mode_layout = QVBoxLayout(mode_group)
-        
-        # 模式选择 (对称放置)
-        mode_select_layout = QHBoxLayout()
-        mode_select_layout.addStretch()
-        
+            QFileDialog.getExistingDirectory(self, "选择输出目录") or self.out_edit.text()))
+        out_lay.addWidget(out_btn)
+        root.addWidget(out_group)
+
+        # ── 4. 处理模式 ─────────────────────────────────────────
+        mode_group = QGroupBox("4   处理模式")
+        mode_lay = QVBoxLayout(mode_group)
+        mode_lay.setSpacing(8)
+
         self.mode_group = QButtonGroup()
-        
-        # 快速模式
-        fast_frame = QFrame()
-        fast_frame.setFrameStyle(QFrame.StyledPanel)
-        fast_frame.setMinimumWidth(280)  # 固定宽度以保证对称
-        fast_layout = QVBoxLayout(fast_frame)
-        self.fast_radio = QRadioButton("⚡ 快速模式 ")
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(12)
+
+        def make_mode_frame(radio, desc_text):
+            frame = QFrame()
+            frame.setStyleSheet("""
+                QFrame {{
+                    background: {s};
+                    border: 1px solid {b};
+                    border-radius: 5px;
+                    padding: 4px;
+                }}
+            """.format(s=SURFACE, b=BORDER))
+            fl = QVBoxLayout(frame)
+            fl.setContentsMargins(10, 8, 10, 8)
+            fl.setSpacing(3)
+            fl.addWidget(radio)
+            desc = QLabel(desc_text)
+            desc.setStyleSheet("color:{}; font-size:8pt; margin-left:21px;".format(TEXT_SEC))
+            fl.addWidget(desc)
+            return frame
+
+        self.fast_radio = QRadioButton("⚡ 快速模式（建议先尝试）")
         self.fast_radio.setChecked(True)
-        self.fast_radio.setFont(QFont("Arial ", 10, QFont.Bold))
-        fast_layout.addWidget(self.fast_radio)
-        fast_desc = QLabel("适合扫描质量好的数据\n速度快，推荐先试用 ")
-        fast_desc.setStyleSheet("color:#666;font-size:9pt; ")
-        fast_layout.addWidget(fast_desc)
+        fast_frame = make_mode_frame(self.fast_radio, "适合扫描质量好的数据，速度快")
         self.mode_group.addButton(self.fast_radio, 0)
-        mode_select_layout.addWidget(fast_frame)
-        
-        mode_select_layout.addSpacing(20)
-        
-        # 精细模式
-        quality_frame = QFrame()
-        quality_frame.setFrameStyle(QFrame.StyledPanel)
-        quality_frame.setMinimumWidth(280)  # 固定宽度以保证对称
-        quality_layout = QVBoxLayout(quality_frame)
-        self.quality_radio = QRadioButton("✨ 精细模式 ")
-        self.quality_radio.setFont(QFont("Arial ", 10, QFont.Bold))
-        quality_layout.addWidget(self.quality_radio)
-        quality_desc = QLabel("适合复杂情况 (静脉窦显影、噪点多)\n处理更细致，速度慢5倍左右 ")
-        quality_desc.setStyleSheet("color:#666;font-size:9pt; ")
-        quality_layout.addWidget(quality_desc)
+
+        self.quality_radio = QRadioButton("✨ 精细模式")
+        quality_frame = make_mode_frame(self.quality_radio, "适合复杂情况（静脉窦显影、噪点多），速度慢4-5倍")
         self.mode_group.addButton(self.quality_radio, 1)
-        mode_select_layout.addWidget(quality_frame)
-        
-        mode_select_layout.addStretch()
-        mode_layout.addLayout(mode_select_layout)
-        
-        # 模式推荐标签
-        self.mode_recommend_label = QLabel(" ")
-        self.mode_recommend_label.setStyleSheet("color:#E91E63;font-weight:bold;padding:5px; ")
-        self.mode_recommend_label.setAlignment(Qt.AlignCenter)
-        mode_layout.addWidget(self.mode_recommend_label)
-        
-        layout.addWidget(mode_group)
-        
-        # ===================== 参数设置 =====================
-        param_group = QGroupBox("5. 参数设置 ")
-        param_layout = QVBoxLayout(param_group)
-        
+
+        mode_row.addWidget(fast_frame, 1)
+        mode_row.addWidget(quality_frame, 1)
+        mode_row.addStretch(1)
+        mode_lay.addLayout(mode_row)
+
+        self.mode_recommend_label = QLabel("")
+        self.mode_recommend_label.setStyleSheet(
+            "color:{}; font-weight:600; padding: 2px 4px; font-size:8.5pt;".format(SUCCESS))
+        mode_lay.addWidget(self.mode_recommend_label)
+
+        root.addWidget(mode_group)
+
+        # ── 5. 参数设置 ─────────────────────────────────────────
+        param_group = QGroupBox("5   参数设置")
+        param_lay = QVBoxLayout(param_group)
+        param_lay.setSpacing(10)
+
+        def lbl_sec(text):
+            l = QLabel(text)
+            l.setStyleSheet("color:{};".format(TEXT_SEC))
+            return l
+
+        # 行1：配准参数
         row1 = QHBoxLayout()
-        self.global_check = QCheckBox("全局配准 ")
+        row1.setSpacing(12)
+        self.global_check = QCheckBox("全局配准")
         self.global_check.setChecked(True)
         row1.addWidget(self.global_check)
-        row1.addSpacing(20)
-        row1.addWidget(QLabel("最大位移："))
+
+        div1 = QFrame(); div1.setFrameShape(QFrame.VLine)
+        div1.setStyleSheet("color:{};".format(BORDER)); row1.addWidget(div1)
+
+        row1.addWidget(lbl_sec("最大位移:"))
         self.max_shift = QSpinBox()
-        self.max_shift.setRange(5, 30)
-        self.max_shift.setValue(15)
+        self.max_shift.setRange(5, 30); self.max_shift.setValue(15)
+        self.max_shift.setFixedWidth(64)
         row1.addWidget(self.max_shift)
-        row1.addWidget(QLabel("px "))
-        row1.addSpacing(10)
-        row1.addWidget(QLabel("最大旋转："))
+        row1.addWidget(lbl_sec("px"))
+
+        row1.addSpacing(8)
+        row1.addWidget(lbl_sec("最大旋转:"))
         self.max_angle = QDoubleSpinBox()
-        self.max_angle.setRange(0.5, 5.0)
-        self.max_angle.setValue(3.0)
+        self.max_angle.setRange(0.5, 5.0); self.max_angle.setValue(3.0)
+        self.max_angle.setFixedWidth(64)
         row1.addWidget(self.max_angle)
-        row1.addWidget(QLabel("° "))
+        row1.addWidget(lbl_sec("度"))
         row1.addStretch()
-        param_layout.addLayout(row1)
-        
+        param_lay.addLayout(row1)
+
+        # 分隔线
+        hr1 = QFrame(); hr1.setFrameShape(QFrame.HLine)
+        hr1.setStyleSheet("color:{};".format(BORDER))
+        param_lay.addWidget(hr1)
+
+        # 行2：骨骼/血管
         row2 = QHBoxLayout()
-        row2.addWidget(QLabel("骨骼抑制："))
+        row2.setSpacing(12)
+        row2.addWidget(lbl_sec("骨骼抑制:"))
         self.bone_slider = QSlider(Qt.Horizontal)
-        self.bone_slider.setRange(5, 25)
-        self.bone_slider.setValue(12)
-        self.bone_slider.setMaximumWidth(150)
-        self.bone_slider.valueChanged.connect(lambda v: self.bone_label.setText("{:.1f} ".format(v/10)))
+        self.bone_slider.setRange(5, 25); self.bone_slider.setValue(12)
+        self.bone_slider.setFixedWidth(140)
+        self.bone_slider.valueChanged.connect(lambda v: self.bone_label.setText("{:.1f}".format(v/10)))
         row2.addWidget(self.bone_slider)
-        self.bone_label = QLabel("1.2 ")
-        self.bone_label.setFixedWidth(30)
+        self.bone_label = QLabel("1.2")
+        self.bone_label.setFixedWidth(28)
+        self.bone_label.setStyleSheet("font-weight:600;")
         row2.addWidget(self.bone_label)
-        row2.addSpacing(20)
-        row2.addWidget(QLabel("血管增强："))
+
+        div2 = QFrame(); div2.setFrameShape(QFrame.VLine)
+        div2.setStyleSheet("color:{};".format(BORDER)); row2.addWidget(div2)
+
+        row2.addWidget(lbl_sec("血管增强:"))
         self.enhance = QDoubleSpinBox()
-        self.enhance.setRange(0.5, 5.0)
-        self.enhance.setValue(2.0)
+        self.enhance.setRange(0.5, 5.0); self.enhance.setValue(2.0)
+        self.enhance.setFixedWidth(68)
         row2.addWidget(self.enhance)
-        row2.addSpacing(20)
-        self.clean_check = QCheckBox("清理骨骼边缘 ")
+
+        div3 = QFrame(); div3.setFrameShape(QFrame.VLine)
+        div3.setStyleSheet("color:{};".format(BORDER)); row2.addWidget(div3)
+
+        self.clean_check = QCheckBox("清理骨骼边缘")
         self.clean_check.setChecked(True)
         row2.addWidget(self.clean_check)
         row2.addStretch()
-        param_layout.addLayout(row2)
-        
+        param_lay.addLayout(row2)
+
+        hr2 = QFrame(); hr2.setFrameShape(QFrame.HLine)
+        hr2.setStyleSheet("color:{};".format(BORDER))
+        param_lay.addWidget(hr2)
+
+        # 行3：后处理/窗口
         row3 = QHBoxLayout()
-        row3.addWidget(QLabel("最小血管："))
+        row3.setSpacing(12)
+        row3.addWidget(lbl_sec("最小血管:"))
         self.min_size = QSpinBox()
-        self.min_size.setRange(1, 15)
-        self.min_size.setValue(5)
+        self.min_size.setRange(1, 15); self.min_size.setValue(5)
+        self.min_size.setFixedWidth(56)
         row3.addWidget(self.min_size)
-        row3.addWidget(QLabel("px "))
-        row3.addSpacing(20)
-        row3.addWidget(QLabel("平滑："))
+        row3.addWidget(lbl_sec("px"))
+
+        div4 = QFrame(); div4.setFrameShape(QFrame.VLine)
+        div4.setStyleSheet("color:{};".format(BORDER)); row3.addWidget(div4)
+
+        row3.addWidget(lbl_sec("平滑:"))
         self.smooth = QDoubleSpinBox()
-        self.smooth.setRange(0, 1.5)
-        self.smooth.setValue(0.7)
+        self.smooth.setRange(0, 1.5); self.smooth.setValue(0.7)
+        self.smooth.setFixedWidth(60)
         row3.addWidget(self.smooth)
-        row3.addSpacing(20)
-        row3.addWidget(QLabel("窗位："))
+
+        div5 = QFrame(); div5.setFrameShape(QFrame.VLine)
+        div5.setStyleSheet("color:{};".format(BORDER)); row3.addWidget(div5)
+
+        row3.addWidget(lbl_sec("窗位:"))
         self.wc = QSpinBox()
-        self.wc.setRange(0, 2000)
-        self.wc.setValue(200)
+        self.wc.setRange(0, 2000); self.wc.setValue(200)
+        self.wc.setFixedWidth(64)
         row3.addWidget(self.wc)
-        row3.addWidget(QLabel("窗宽："))
+
+        row3.addWidget(lbl_sec("窗宽:"))
         self.ww = QSpinBox()
-        self.ww.setRange(1, 2000)
-        self.ww.setValue(400)
+        self.ww.setRange(1, 2000); self.ww.setValue(400)
+        self.ww.setFixedWidth(64)
         row3.addWidget(self.ww)
         row3.addStretch()
-        param_layout.addLayout(row3)
-        
-        layout.addWidget(param_group)
-        
-        # 开始按钮 (与分析按钮样式一致，居中)
-        start_layout = QHBoxLayout()
-        start_layout.addStretch()
-        self.start_btn = QPushButton("▶ 开始处理 ")
-        # 使用与分析按钮相同的样式
-        self.start_btn.setStyleSheet("background:#2196F3;color:white;font-weight:bold;padding:8px; ")
+        param_lay.addLayout(row3)
+
+        root.addWidget(param_group)
+
+        # ── 操作行：开始 + 进度 + 取消 ─────────────────────────
+        action_lay = QHBoxLayout()
+        action_lay.setSpacing(10)
+
+        self.start_btn = QPushButton("▶  开始处理")
+        self.start_btn.setFixedHeight(36)
+        self.start_btn.setStyleSheet("""
+            QPushButton {{
+                background: {d}; color: white;
+                border: none; border-radius: 5px;
+                font-weight: 700; font-size: 11pt;
+                padding: 0 24px;
+            }}
+            QPushButton:hover {{ background: #A93226; }}
+            QPushButton:pressed {{ background: #922B21; }}
+            QPushButton:disabled {{ background: #B0BEC5; color: #ECEFF1; }}
+        """.format(d=DANGER))
         self.start_btn.clicked.connect(self.start_processing)
         self.start_btn.setEnabled(False)
-        start_layout.addWidget(self.start_btn)
-        start_layout.addStretch()
-        layout.addLayout(start_layout)
-        
-        # 进度
-        prog_layout = QHBoxLayout() 
+        action_lay.addWidget(self.start_btn)
+
         self.progress = QProgressBar()
-        prog_layout.addWidget(self.progress)
-        self.cancel_btn = QPushButton("取消 ")
+        self.progress.setFixedHeight(8)
+        self.progress.setTextVisible(False)
+        action_lay.addWidget(self.progress, 1)
+
+        self.cancel_btn = btn_secondary("取消")
         self.cancel_btn.setEnabled(False)
-        self.cancel_btn.setFixedWidth(50)
+        self.cancel_btn.setFixedWidth(72)
         self.cancel_btn.clicked.connect(self.cancel)
-        prog_layout.addWidget(self.cancel_btn)
-        layout.addLayout(prog_layout)
-        
-        # 日志
-        log_group = QGroupBox("日志 ")
-        log_layout = QVBoxLayout(log_group)
+        action_lay.addWidget(self.cancel_btn)
+
+        root.addLayout(action_lay)
+
+        # ── 日志 ────────────────────────────────────────────────
+        log_group = QGroupBox("运行日志")
+        log_lay = QVBoxLayout(log_group)
+        log_lay.setContentsMargins(8, 8, 8, 8)
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMinimumHeight(180)
-        self.log_text.setStyleSheet("font-family:Consolas;font-size:9pt; ")
-        log_layout.addWidget(self.log_text)
-        layout.addWidget(log_group)
-        
-        self.log("头颅 CTA 减影 v1.0 - WHW 版 ")
-        self.log("=" * 50)
-        self.log("⚡ 快速模式：扫描质量好时使用，速度快 ")
-        self.log("✨ 精细模式：复杂情况使用，减少残留和噪点 ")
-        self.log("=" * 50)
-        self.log(" ")
-        self.log("使用步骤：")
-        self.log("  1. 选择 DICOM 目录，点击「扫描」")
-        self.log("  2. 确认序列配对 ")
-        self.log("  3. 点击「分析序列」（自动推荐模式）")
-        self.log("  4. 选择处理模式，点击「开始处理」")
+        self.log_text.setMinimumHeight(190)
+        log_lay.addWidget(self.log_text)
+        root.addWidget(log_group)
 
+        # ── 初始日志 ────────────────────────────────────────────
+        self.log("头颅CTA减影 v1.0 - whw 版")
+        self.log("=" * 50)
+        self.log("⚡ 快速模式: 扫描质量好时使用，速度快")
+        self.log("✨ 精细模式: 复杂情况使用，减少残留和噪点，速度慢4-5倍")
+        self.log("=" * 50)
+        self.log("")
+        self.log("使用步骤:")
+        self.log("  1. 选择DICOM目录，点击「扫描」")
+        self.log("  2. 确认序列配对")
+        self.log("  3. 点击「分析序列」（自动推荐模式）")
+        self.log("  4. 选择处理模式，建议先试跑“快速模式”观察减影效果，点击「开始处理」")
+    
     def log(self, msg):
         self.log_text.append(msg)
         self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
         QApplication.processEvents()
-
+    
     def scan_directory(self):
         data_dir = self.data_dir_edit.text()
         if not data_dir:
-            QMessageBox.warning(self, "提示 ", "请先选择目录 ")
+            QMessageBox.warning(self, "提示", "请先选择目录")
             return
         
         self.log_text.clear()
@@ -1400,14 +1740,14 @@ class MainWindow(QMainWindow):
         self.scan_btn.setEnabled(False)
         self.analyze_btn.setEnabled(False)
         self.start_btn.setEnabled(False)
-        self.mode_recommend_label.setText(" ")
+        self.mode_recommend_label.setText("")
         
         self.scan_thread = SeriesScanThread(data_dir)
         self.scan_thread.progress.connect(self.progress.setValue)
         self.scan_thread.log.connect(self.log)
         self.scan_thread.finished_signal.connect(self.on_scan_finished)
         self.scan_thread.start()
-
+    
     def on_scan_finished(self, all_series, pairs, cta_series):
         self.scan_btn.setEnabled(True)
         self.all_series = all_series
@@ -1417,15 +1757,15 @@ class MainWindow(QMainWindow):
         
         for s in sorted_series:
             contrast = is_contrast_enhanced(s)
-            marker = " "
+            marker = ""
             if contrast is True:
-                marker = "[C+]  "
+                marker = "[C+] "
             elif contrast is False:
-                marker = "[C-]  "
+                marker = "[C-] "
             
-            text = "#{:03d} | {}张 | {}{} ".format(
+            text = "#{:03d} | {}张 | {}{}".format(
                 s.series_number, s.file_count, marker, 
-                s.series_description[:40] if s.series_description else "(无描述) "
+                s.series_description[:40] if s.series_description else "(无描述)"
             )
             
             self.pre_combo.addItem(text, s)
@@ -1445,18 +1785,18 @@ class MainWindow(QMainWindow):
         self.analyze_btn.setEnabled(True)
         
         if not self.out_edit.text():
-            self.out_edit.setText(os.path.join(self.data_dir_edit.text(), "CTA_Subtraction "))
-
+            self.out_edit.setText(os.path.join(self.data_dir_edit.text(), "CTA_Subtraction"))
+    
     def analyze_params(self):
         pre_series = self.pre_combo.currentData()
         post_series = self.post_combo.currentData()
         
         if not pre_series or not post_series:
-            QMessageBox.warning(self, "提示 ", "请选择序列 ")
+            QMessageBox.warning(self, "提示", "请选择序列")
             return
         
         if pre_series == post_series:
-            QMessageBox.warning(self, "提示 ", "请选择不同的序列 ")
+            QMessageBox.warning(self, "提示", "请选择不同的序列")
             return
         
         self.selected_pre = pre_series
@@ -1472,13 +1812,13 @@ class MainWindow(QMainWindow):
         self.param_thread.log.connect(self.log)
         self.param_thread.finished_signal.connect(self.on_analyze_finished)
         self.param_thread.start()
-
+    
     def on_analyze_finished(self, result):
         self.scan_btn.setEnabled(True)
         self.analyze_btn.setEnabled(True)
         
         if 'error' in result:
-            QMessageBox.warning(self, "错误 ", result['error'])
+            QMessageBox.warning(self, "错误", result['error'])
             return
         
         self.recommendations = result
@@ -1495,34 +1835,44 @@ class MainWindow(QMainWindow):
         self.wc.setValue(result.get('wc', 200))
         self.ww.setValue(result.get('ww', 400))
         
-        # 根据质量推荐模式 (仅显示建议，默认仍选快速模式)
+        # 根据质量推荐模式
         recommended_mode = result.get('recommended_mode', 'fast')
         quality_score = result.get('quality_score', 0.5)
         
-        # 修改点：默认始终选中快速模式，让用户自己决定要不要切精细
-        self.fast_radio.setChecked(True)
-        
         if recommended_mode == 'fast':
-            self.mode_recommend_label.setText("📊 图像质量评分：{:.0f}% → 建议使用「快速模式」".format(quality_score * 100))
-            self.mode_recommend_label.setStyleSheet("color:#4CAF50;font-weight:bold;padding:5px; ")
+            self.fast_radio.setChecked(True)
+            self.mode_recommend_label.setText("📊 图像质量评分: {:.0f}% → 推荐使用「快速模式」".format(quality_score * 100))
+            self.mode_recommend_label.setStyleSheet("color:#1E7F4E;font-weight:600;font-size:8.5pt;padding:2px 4px;")
         else:
-            self.mode_recommend_label.setText("📊 图像质量评分：{:.0f}% → 建议尝试「精细模式」".format(quality_score * 100))
-            self.mode_recommend_label.setStyleSheet("color:#FF9800;font-weight:bold;padding:5px; ")
+            self.quality_radio.setChecked(True)
+            self.mode_recommend_label.setText("📊 图像质量评分: {:.0f}% → 推荐使用「精细模式」".format(quality_score * 100))
+            self.mode_recommend_label.setStyleSheet("color:#B06000;font-weight:600;font-size:8.5pt;padding:2px 4px;")
         
         self.start_btn.setEnabled(True)
-        self.log(" ")
-        self.log("✓ 参数已设置，默认快速模式，点击「开始处理」运行")
-
+        self.log("")
+        self.log("✓ 参数已设置，模式已推荐，点击「开始处理」运行")
+    
     def start_processing(self):
         if not self.selected_pre or not self.selected_post:
-            QMessageBox.warning(self, "提示 ", "请先分析序列 ")
+            QMessageBox.warning(self, "提示", "请先分析序列")
             return
         
         out_dir = self.out_edit.text()
         if not out_dir:
-            QMessageBox.warning(self, "提示 ", "请设置输出目录 ")
+            QMessageBox.warning(self, "提示", "请设置输出目录")
             return
         
+
+        out_dir = self.out_edit.text()
+        if os.path.exists(out_dir) and os.listdir(out_dir):
+            reply = QMessageBox.question(
+                self, "目录非空",
+                "输出目录已存在文件，继续将覆盖同名文件。\n是否继续？",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                return
+
         use_quality_mode = self.quality_radio.isChecked()
         
         options = {
@@ -1546,11 +1896,11 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         
-        mode_name = "精细模式 " if use_quality_mode else "快速模式 "
-        self.log(" ")
-        self.log("使用：{} ".format(mode_name))
-        self.log("平扫：#{} {} ".format(self.selected_pre.series_number, self.selected_pre.series_description[:30]))
-        self.log("增强：#{} {} ".format(self.selected_post.series_number, self.selected_post.series_description[:30]))
+        mode_name = "精细模式" if use_quality_mode else "快速模式"
+        self.log("")
+        self.log("使用: {}".format(mode_name))
+        self.log("平扫: #{} {}".format(self.selected_pre.series_number, self.selected_pre.series_description[:30]))
+        self.log("增强: #{} {}".format(self.selected_post.series_number, self.selected_post.series_description[:30]))
         
         self.proc_thread = ProcessThread(
             self.selected_pre.files, self.selected_post.files, out_dir, options)
@@ -1558,11 +1908,11 @@ class MainWindow(QMainWindow):
         self.proc_thread.log.connect(self.log)
         self.proc_thread.finished_signal.connect(self.on_process_finished)
         self.proc_thread.start()
-
+    
     def cancel(self):
         if hasattr(self, 'proc_thread') and self.proc_thread:
             self.proc_thread.cancel()
-
+    
     def on_process_finished(self, success, msg):
         self.scan_btn.setEnabled(True)
         self.analyze_btn.setEnabled(True)
@@ -1570,9 +1920,10 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setEnabled(False)
         
         if success:
-            QMessageBox.information(self, "完成 ", msg)
+            QMessageBox.information(self, "完成", msg)
         else:
-            QMessageBox.warning(self, "错误 ", msg)
+            QMessageBox.warning(self, "错误", msg)
+
 
 def main():
     app = QApplication(sys.argv)
@@ -1580,6 +1931,7 @@ def main():
     win = MainWindow()
     win.show()
     sys.exit(app.exec_())
+
 
 if __name__ == "__main__":
     main()
