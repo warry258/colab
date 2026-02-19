@@ -12,6 +12,7 @@ import time
 from datetime import datetime
 from collections import defaultdict
 from scipy import ndimage
+from PyQt5 import QtWidgets, QtCore, QtGui
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -1935,3 +1936,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
