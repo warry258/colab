@@ -5,20 +5,29 @@ on: [push]
 jobs:
   build:
     runs-on: windows-latest
+    
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install pyinstaller
-          pip install -r requirements.txt
-      - name: Build EXE
-        run: pyinstaller --onefile yhead-CTA.py
+          # 如果有 requirements.txt，取消下面这行的注释
+          # pip install -r requirements.txt
+
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller --onefile head-CTA.py
+
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4  # ✅ 已升级到 v4
         with:
           name: windows-exe
           path: dist/
