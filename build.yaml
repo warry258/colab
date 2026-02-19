@@ -1,0 +1,24 @@
+name: Build EXE
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install -r requirements.txt
+      - name: Build EXE
+        run: pyinstaller --onefile yhead-CTA.py
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: windows-exe
+          path: dist/
