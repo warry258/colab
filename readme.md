@@ -4,3 +4,5 @@ ZIT UINT4/INT8双版本混搭版 [![Open In Colab](https://colab.research.google
 
 Z_image_Base_Trans_Sdnq_INT8量化 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/warry258/colab/blob/main/z_image_base_INT8量化.ipynb)
 
+ZIT_ZIB双版本uin4_int8五合一混合版 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/warry258/colab/blob/main/ZIT_ZIB双版本uin4_int8五合一混合版.ipynb) （要配合我的量化程序）
+
